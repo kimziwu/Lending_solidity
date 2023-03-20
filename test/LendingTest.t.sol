@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.13;
 
-import "forge-std/console.sol";
 import "forge-std/Test.sol";
 
-import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
-import "../src/DreamAcademyLending.sol";
+import {ERC20} from "openzeppelin-contracts/token/ERC20/ERC20.sol";
+import "src/DreamAcademyLending.sol";
 
 contract CUSDC is ERC20 {
     constructor() ERC20("Circle Stable Coin", "USDC") {
@@ -48,15 +47,12 @@ contract Testx is Test {
         user3 = address(0x1337 + 2);
         user4 = address(0x1337 + 3);
         dreamOracle = new DreamOracle();
-        
 
         vm.deal(address(this), 10000000 ether);
         usdc = new CUSDC();
 
         // TDOO 아래 setUp이 정상작동 할 수 있도록 여러분의 Lending Contract를 수정하세요.
         lending = new DreamAcademyLending(IPriceOracle(address(dreamOracle)), address(usdc));
-        
-        console.log("hih");
         usdc.approve(address(lending), type(uint256).max);
 
         lending.initializeLendingProtocol{value: 1}(address(usdc)); // set reserve ^__^
@@ -64,11 +60,6 @@ contract Testx is Test {
         dreamOracle.setPrice(address(0x0), 1339 ether);
         dreamOracle.setPrice(address(usdc), 1 ether);
     }
-
-
-
-
-
 
     function testDepositEtherWithoutTxValueFails() external {
         (bool success,) = address(lending).call{value: 0 ether}(
