@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.13;
 
+import "forge-std/console.sol";
 import "forge-std/Test.sol";
 
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
-import "src/DreamAcademyLending2.sol";
+import "src/DreamAcademyLending.sol";
 
 contract CUSDC is ERC20 {
     constructor() ERC20("Circle Stable Coin", "USDC") {
@@ -53,16 +54,18 @@ contract Testx is Test {
 
         // TDOO 아래 setUp이 정상작동 할 수 있도록 여러분의 Lending Contract를 수정하세요.
         lending = new DreamAcademyLending(IPriceOracle(address(dreamOracle)), address(usdc));
+        console.log("lending addr",address(lending));
         usdc.approve(address(lending), type(uint256).max);
 
         lending.initializeLendingProtocol{value: 1}(address(usdc)); // set reserve ^__^
 
         //orcale
         dreamOracle.setPrice(address(0x0), 1339 ether);
-        dreamOracle.setPrice(address(usdc), 1 ether);
+        dreamOracle.setPrice(address(usdc), 1 ether); // 1USDC=1ETH
     }
 
-    // msg.value check
+
+    // msg.value>=amount, amount>0
     function testDepositEtherWithoutTxValueFails() external {
         (bool success,) = address(lending).call{value: 0 ether}(
             abi.encodeWithSelector(DreamAcademyLending.deposit.selector, address(0x0), 1 ether)
@@ -78,8 +81,6 @@ contract Testx is Test {
     }
 
     
-
-    // msg.value==amount; - eth
     function testDepositEtherWithEqualValueSucceeds() external {
         (bool success,) = address(lending).call{value: 2 ether}(
             abi.encodeWithSelector(DreamAcademyLending.deposit.selector, address(0x0), 2 ether)
@@ -91,6 +92,7 @@ contract Testx is Test {
     // usdc balanceof
     function testDepositUSDCWithInsufficientValueFails() external {
         usdc.approve(address(lending), 1);
+        console.log("allowances",usdc.allowance(address(this),address(lending)));
         (bool success,) = address(lending).call(
             abi.encodeWithSelector(DreamAcademyLending.deposit.selector, address(usdc), 3000 ether)
         );
