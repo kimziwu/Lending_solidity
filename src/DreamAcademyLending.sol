@@ -61,7 +61,7 @@ contract DreamAcademyLending {
             require(_stable.balanceOf(msg.sender)>=amount,""); //??
             _stable.transferFrom(msg.sender, address(this), amount); 
             _userUSDC[msg.sender]=amount;
-			_time[msg.sender]=block.timestamp;
+			_time[msg.sender]=block.number;
         }
         else { // ETH (address(0))
 			require(amount>0);
