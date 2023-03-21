@@ -3,8 +3,8 @@ pragma solidity 0.8.13;
 
 import "forge-std/Test.sol";
 
-import {ERC20} from "openzeppelin-contracts/token/ERC20/ERC20.sol";
-import "src/DreamAcademyLending.sol";
+import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
+import "src/DreamAcademyLending2.sol";
 
 contract CUSDC is ERC20 {
     constructor() ERC20("Circle Stable Coin", "USDC") {
@@ -12,7 +12,7 @@ contract CUSDC is ERC20 {
     }
 }
 
-contract DreamOracle {
+contract DreamOracle { // oracle
     address public operator;
     mapping(address => uint256) prices;
 
@@ -57,10 +57,12 @@ contract Testx is Test {
 
         lending.initializeLendingProtocol{value: 1}(address(usdc)); // set reserve ^__^
 
+        //orcale
         dreamOracle.setPrice(address(0x0), 1339 ether);
         dreamOracle.setPrice(address(usdc), 1 ether);
     }
 
+    // msg.value check
     function testDepositEtherWithoutTxValueFails() external {
         (bool success,) = address(lending).call{value: 0 ether}(
             abi.encodeWithSelector(DreamAcademyLending.deposit.selector, address(0x0), 1 ether)
@@ -75,6 +77,9 @@ contract Testx is Test {
         assertFalse(success);
     }
 
+    
+
+    // msg.value==amount; - eth
     function testDepositEtherWithEqualValueSucceeds() external {
         (bool success,) = address(lending).call{value: 2 ether}(
             abi.encodeWithSelector(DreamAcademyLending.deposit.selector, address(0x0), 2 ether)
@@ -83,6 +88,7 @@ contract Testx is Test {
         assertTrue(address(lending).balance == 2 ether + 1);
     }
 
+    // usdc balanceof
     function testDepositUSDCWithInsufficientValueFails() external {
         usdc.approve(address(lending), 1);
         (bool success,) = address(lending).call(
