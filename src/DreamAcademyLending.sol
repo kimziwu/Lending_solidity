@@ -8,7 +8,7 @@ import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 /**
 ETH를 담보로 사용해서 USDC를 빌리고, 빌려줄 수 있는 서비스
 이자율 : 24h - 0.1% 
-LTV : 50%
+LTV : 50%        	OOOOOOOOOOOOOOOOOOOOOO
 	특정 담보로 빌릴 수 있는 최대 금액
 	1ETH=0.5USDC
 liquidation threshold : 75%
@@ -62,6 +62,7 @@ contract DreamAcademyLending {
             _stable.transferFrom(msg.sender, address(this), amount); 
             _userUSDC[msg.sender]=amount;
 			_time[msg.sender]=block.number;
+			console.log("time:",block.number);
         }
         else { // ETH (address(0))
 			require(amount>0);
@@ -72,29 +73,38 @@ contract DreamAcademyLending {
 
 
 	function borrow(address tokenAddress, uint256 amount) external payable{
-		/*
+		require(_stable.balanceOf(address(this))>=amount);
 
-        require(amount<=_stable.balanceOf(address(this)));
-
-        uint test_amount=_userETH[msg.sender]*_oracle.getPrice(address(0x0))/_oracle.getPrice(tokenAddress)/2-_borrow[msg.sender]; // 대출가능 금액 계산
-        require(amount<=test_amount);
+		// LTV 계산, userETH*oracle / 2 - 기존 대출금
+        uint test_amount=(_userETH[msg.sender]*(_oracle.getPrice(address(0x0))/_oracle.getPrice(tokenAddress))/2)-_borrow[msg.sender]; 
+        require(test_amount>=amount);
 
         _borrow[msg.sender]+=amount;
-		_time[msg.sender]=block.number;
-
 		_stable.transfer(msg.sender, amount);
-		*/
 	}
 
 
+	// 환전 - ETC->USDC
+	function withdraw(address tokenAddress, uint256 amount) external {
+
+		require(_userETH[msg.sender]>=amount);
+		// threshold check - 75%
+		//대출이 담보의 75% 이상이 되면 안됨
+		uint loans=_borrow[msg.sender]*(_oracle.getPrice(address(_stable))/_oracle.getPrice(address(0x0)));
+		uint guarantee=(_userETH[msg.sender])*3/4;
+		require(loans<guarantee); // X
+
+		_userETH[msg.sender]-=amount;
+		msg.sender.call{value: amount}("");	
+	}
+
 	// 상환
 	function repay(address tokenAddress, uint256 amount) external payable {
-		/*
 		require(_stable.balanceOf(msg.sender)>=amount);
-		require(_userETH[msg.sender]>=amount);
+		require(_userETH[msg.sender]>=amount); 
 		_userETH[msg.sender]-=amount;
 		_stable.transferFrom(msg.sender, address(this), amount);
-		*/
+		
 	}
 
 
@@ -111,20 +121,8 @@ contract DreamAcademyLending {
 	}
 
 
-	function withdraw(address tokenAddress, uint256 amount) external {
-		/*
-		if (tokenAddress!=address(0)){
-			require(_stable.balanceOf(address(this))>=amount);
-			require(_userUSDC[msg.sender]>=amount);
-
-			
-		}
-		else {
-			require(_userETH[msg.sender]>=amount);
-
-		}
-		*/
-	}
+	
+	
 
 	function getAccruedSupplyAmount(address usdc) public returns (uint256) {
 

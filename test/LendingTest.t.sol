@@ -92,7 +92,7 @@ contract Testx is Test {
     // usdc balanceof
     function testDepositUSDCWithInsufficientValueFails() external {
         usdc.approve(address(lending), 1);
-        console.log("allowances",usdc.allowance(address(this),address(lending)));
+        
         (bool success,) = address(lending).call(
             abi.encodeWithSelector(DreamAcademyLending.deposit.selector, address(usdc), 3000 ether)
         );
@@ -283,21 +283,24 @@ contract Testx is Test {
             usdc.approve(address(lending), type(uint256).max);
 
             vm.roll(block.number + 1);
-
+            
             (success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.repay.selector, address(usdc), 1000 ether)
             );
             assertTrue(success);
+            
 
             (success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.borrow.selector, address(usdc), 1000 ether)
             );
             assertFalse(success);
 
+
             (success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.borrow.selector, address(usdc), 999 ether)
             );
             assertTrue(success);
+            
         }
         vm.stopPrank();
     }
@@ -368,16 +371,19 @@ contract Testx is Test {
                 abi.encodeWithSelector(DreamAcademyLending.borrow.selector, address(usdc), 1000 ether)
             );
             assertTrue(success);
-
+            
             (success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.borrow.selector, address(usdc), 1000 ether)
             );
             assertTrue(success);
+            console.log("2:",usdc.balanceOf(user2));
 
             (success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.withdraw.selector, address(0x0), 1 ether)
             );
             assertFalse(success);
+            console.log("3:",usdc.balanceOf(user2));
+            
         }
         vm.stopPrank();
     }
