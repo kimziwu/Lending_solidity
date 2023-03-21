@@ -248,6 +248,7 @@ contract Testx is Test {
 
             usdc.approve(address(lending), type(uint256).max);
 
+
             (success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.repay.selector, address(usdc), 1000 ether)
             );
@@ -257,6 +258,7 @@ contract Testx is Test {
                 abi.encodeWithSelector(DreamAcademyLending.borrow.selector, address(usdc), 1000 ether)
             );
             assertTrue(success);
+             
         }
         vm.stopPrank();
     }
@@ -283,11 +285,13 @@ contract Testx is Test {
             usdc.approve(address(lending), type(uint256).max);
 
             vm.roll(block.number + 1);
+            console.log("block",block.number);
             
             (success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.repay.selector, address(usdc), 1000 ether)
             );
             assertTrue(success);
+            console.log("balance1:",usdc.balanceOf(user2));
             
 
             (success,) = address(lending).call(
@@ -295,12 +299,16 @@ contract Testx is Test {
             );
             assertFalse(success);
 
+            /*
+
+            console.log("balance2:",usdc.balanceOf(user2));
 
             (success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.borrow.selector, address(usdc), 999 ether)
             );
             assertTrue(success);
-            
+            console.log("balance3:",usdc.balanceOf(user2));
+            */
         }
         vm.stopPrank();
     }

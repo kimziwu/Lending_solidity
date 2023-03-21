@@ -24,25 +24,51 @@ liquidation threshold : 75%
 -토큰은 주소로 간주해서 사용
 */
 
+
 contract DreamAcademyLending {
 
 	IPriceOracle _oracle;
 	ERC20 _stable;
 
 
-	//struct 
-    mapping(address=>uint256) _userUSDC; //예금
-    mapping(address=>uint256) _userETH; //담보금
-    mapping(address=>uint256) _borrow; 
+    mapping(address=>uint256) _deposits; //예금 USDC
+	uint _totalDeposits;
+    mapping(address=>uint256) _mortgages; //담보금 BTC
+	uint _totalMortgages;
+    mapping(address=>uint256) _borrow; // USDC
+	uint _totalBorrow;
 	mapping(address=>uint) _time;
+
+	mapping(address=>uint) _interests; //이자
+	uint _totalInterests;
+
+	uint _totalUsd;
+	
+
+	/*
+	1block=12secs
+	이자율 0.1% 복리
+	mortgages*(1+0.001) ** 24h(1) 
+	
+	borrow(뺏김) -> deposits(받음)
+
+	(block.number*12-최근타임)*borrow?
+
+    time 변수설정
+	*/
+
+	uint _updateUsd;
+	uint _updateBorrow;
+	uint _usdcAccum; 
 
 
 	constructor(IPriceOracle oracle, address usdc) {
 		_stable=ERC20(usdc); 
 		_oracle=oracle;
+
 	}
 
-
+	// _stable은 컨트랙트, usdc 토큰 컨트롤 가능
 	function initializeLendingProtocol(address usdc) public payable {
 		/*
 		console.log(address(_usdc));
@@ -51,83 +77,115 @@ contract DreamAcademyLending {
 		*/
 		
 		_stable.transferFrom(msg.sender, address(this), msg.value); 
-        console.log(_stable.balanceOf(address(this))); 
+		_totalUsd+=msg.value;
+		
+		// 1block=12secs
 	}
 
-
-	//예금, 토큰주소
-	function deposit(address tokenAddress, uint256 amount) public payable {
-        if (tokenAddress!=address(0)){ //USDC
-            require(_stable.balanceOf(msg.sender)>=amount,""); //??
+	// address(0x0) : BTC, address(usdc) : USDC
+	// tokenAddress=토큰
+	function deposit(address tokenAddress, uint256 amount) external payable {
+		
+		if (tokenAddress!=address(0)){ //USDC
+            require(_stable.balanceOf(msg.sender)>=amount);
+            require(amount>0); 
             _stable.transferFrom(msg.sender, address(this), amount); 
-            _userUSDC[msg.sender]=amount;
-			_time[msg.sender]=block.number;
-			console.log("time:",block.number);
+            _deposits[msg.sender]+=amount;
+			_totalDeposits+=amount;
         }
-        else { // ETH (address(0))
-			require(amount>0);
-            require(msg.value>=amount);
-            _userETH[msg.sender]+=amount;
+        else { // ETH 
+			require(msg.value>0); 
+            require(msg.value==amount);
+            _mortgages[msg.sender]+=amount;
+			_totalMortgages+=amount;
         }
 	}
 
 
+	// 대출
+	// tokenAddress 담보 토큰 = ETH, amount 담보 양 
+	// 담보를 기반으로 USDC 빌려줌
 	function borrow(address tokenAddress, uint256 amount) external payable{
 		require(_stable.balanceOf(address(this))>=amount);
 
-		// LTV 계산, userETH*oracle / 2 - 기존 대출금
-        uint test_amount=(_userETH[msg.sender]*(_oracle.getPrice(address(0x0))/_oracle.getPrice(tokenAddress))/2)-_borrow[msg.sender]; 
+		// LTV - 50%
+        uint oracle=_oracle.getPrice(address(0x0))/_oracle.getPrice(tokenAddress);
+        uint test_amount=_mortgages[msg.sender]*oracle/2-_borrow[msg.sender];
         require(test_amount>=amount);
 
         _borrow[msg.sender]+=amount;
+		_totalBorrow+=amount;
 		_stable.transfer(msg.sender, amount);
 	}
 
 
-	// 환전 - ETC->USDC
-	function withdraw(address tokenAddress, uint256 amount) external {
-
-		require(_userETH[msg.sender]>=amount);
-		// threshold check - 75%
-		//대출이 담보의 75% 이상이 되면 안됨
-		uint loans=_borrow[msg.sender]*(_oracle.getPrice(address(_stable))/_oracle.getPrice(address(0x0)));
-		uint guarantee=(_userETH[msg.sender])*3/4;
-		require(loans<guarantee); // X
-
-		_userETH[msg.sender]-=amount;
-		msg.sender.call{value: amount}("");	
-	}
-
-	// 상환
+	// USDC 상환 
 	function repay(address tokenAddress, uint256 amount) external payable {
 		require(_stable.balanceOf(msg.sender)>=amount);
-		require(_userETH[msg.sender]>=amount); 
-		_userETH[msg.sender]-=amount;
+		require(_borrow[msg.sender]>=amount);
+
+		// 이자 계산해야 함
 		_stable.transferFrom(msg.sender, address(this), amount);
+		_borrow[msg.sender]-=amount;
+        _totalBorrow-=amount;
+	}
+
+	// 청산 
+	function liquidate(address user, address tokenAddress, uint256 amount) external payable {
+
+		// 현재 담보가격 
+		uint256 mortgage = _mortgages[user]*_oracle.getPrice(address(0x0))/_oracle.getPrice(tokenAddress);
+		console.log(mortgage);
+
+		// liquidation threshold 
+        require(_borrow[user]>=amount);
+        require(_borrow[user]>mortgage/2);
+
+        // 청산 금액
+        require(_borrow[user]<100 ether || amount==_borrow[user]/4);
+		
+        _borrow[user]-=amount;
+        _totalBorrow-=amount;
+        _mortgages[user]-=amount*_oracle.getPrice(tokenAddress)/_oracle.getPrice(address(0x0));
+        _totalMortgages-=amount*_oracle.getPrice(tokenAddress)/_oracle.getPrice(address(0x0));
+    }
+
+
+	// 출금 - USDC, ETH
+	// mortgage, deposit, interests
+	function withdraw(address tokenAddress, uint256 amount) external payable {
+		if (tokenAddress!=address(0)){ // USDC - _stable, interests, deposits
+			require(_stable.balanceOf(address(this))>=amount);
+            //uint pay=amount+_totalInterests*(_deposits[msg.sender]/_totalDeposits);
+            _deposits[msg.sender]-=amount;
+		    _stable.transferFrom(address(this), msg.sender, amount);
+            _totalDeposits-=amount;
+        
+            // time block 
+		}
+		else { //BTC
+			require(_mortgages[msg.sender]>=amount);
+			require(address(this).balance>=amount);
+
+			// 조건검증 repay 상환 50%
+            
+			uint256 mortgage =_borrow[msg.sender]*_oracle.getPrice(address(this))/_oracle.getPrice(address(0x0));
+			require(mortgage<=(_mortgages[msg.sender]-amount)/2,"Liquidation threshold");
+    
+    
+			_mortgages[msg.sender]-=amount;
+			msg.sender.call{value:amount}("");
+		}
 		
 	}
 
 
-	function liquidate(address user, address tokenAddress, uint256 amount) external {
-		/*
-		require(_borrow[user]>=amount);
-		require((_userETH[user]*_oracle.getPrice(address(0x0))/_oracle.getPrice(tokenAddress))*3/4<_borrow[user]);
-        require(_borrow[user]<100 ether || amount==_borrow[user]);
-
-		_borrow[user]-=amount;
-		_userETH[user]-=amount;
-		_time[user]=block.number;
-		*/
-	}
-
-
-	
-	
-
 	function getAccruedSupplyAmount(address usdc) public returns (uint256) {
-
+		return _deposits[msg.sender]+_totalInterests*(_deposits[msg.sender]/_totalDeposits);
+        // 개인 이자 계산 
 	}
 
 
-	
+
+
 }
