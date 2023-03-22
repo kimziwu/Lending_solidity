@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.13;
 
-import "forge-std/console.sol";
 import "forge-std/Test.sol";
 
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
@@ -13,7 +12,7 @@ contract CUSDC is ERC20 {
     }
 }
 
-contract DreamOracle { // oracle
+contract DreamOracle {
     address public operator;
     mapping(address => uint256) prices;
 
@@ -54,18 +53,14 @@ contract Testx is Test {
 
         // TDOO 아래 setUp이 정상작동 할 수 있도록 여러분의 Lending Contract를 수정하세요.
         lending = new DreamAcademyLending(IPriceOracle(address(dreamOracle)), address(usdc));
-        console.log("lending addr",address(lending));
         usdc.approve(address(lending), type(uint256).max);
 
         lending.initializeLendingProtocol{value: 1}(address(usdc)); // set reserve ^__^
 
-        //orcale
         dreamOracle.setPrice(address(0x0), 1339 ether);
-        dreamOracle.setPrice(address(usdc), 1 ether); // 1USDC=1ETH
+        dreamOracle.setPrice(address(usdc), 1 ether);
     }
 
-
-    // msg.value>=amount, amount>0
     function testDepositEtherWithoutTxValueFails() external {
         (bool success,) = address(lending).call{value: 0 ether}(
             abi.encodeWithSelector(DreamAcademyLending.deposit.selector, address(0x0), 1 ether)
@@ -80,7 +75,6 @@ contract Testx is Test {
         assertFalse(success);
     }
 
-    
     function testDepositEtherWithEqualValueSucceeds() external {
         (bool success,) = address(lending).call{value: 2 ether}(
             abi.encodeWithSelector(DreamAcademyLending.deposit.selector, address(0x0), 2 ether)
@@ -89,10 +83,8 @@ contract Testx is Test {
         assertTrue(address(lending).balance == 2 ether + 1);
     }
 
-    // usdc balanceof
     function testDepositUSDCWithInsufficientValueFails() external {
         usdc.approve(address(lending), 1);
-        
         (bool success,) = address(lending).call(
             abi.encodeWithSelector(DreamAcademyLending.deposit.selector, address(usdc), 3000 ether)
         );
@@ -248,7 +240,6 @@ contract Testx is Test {
 
             usdc.approve(address(lending), type(uint256).max);
 
-
             (success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.repay.selector, address(usdc), 1000 ether)
             );
@@ -258,7 +249,6 @@ contract Testx is Test {
                 abi.encodeWithSelector(DreamAcademyLending.borrow.selector, address(usdc), 1000 ether)
             );
             assertTrue(success);
-             
         }
         vm.stopPrank();
     }
@@ -285,30 +275,21 @@ contract Testx is Test {
             usdc.approve(address(lending), type(uint256).max);
 
             vm.roll(block.number + 1);
-            console.log("block",block.number);
-            
+
             (success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.repay.selector, address(usdc), 1000 ether)
             );
             assertTrue(success);
-            console.log("balance1:",usdc.balanceOf(user2));
-            
 
             (success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.borrow.selector, address(usdc), 1000 ether)
             );
             assertFalse(success);
 
-            /*
-
-            console.log("balance2:",usdc.balanceOf(user2));
-
             (success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.borrow.selector, address(usdc), 999 ether)
             );
             assertTrue(success);
-            console.log("balance3:",usdc.balanceOf(user2));
-            */
         }
         vm.stopPrank();
     }
@@ -379,19 +360,16 @@ contract Testx is Test {
                 abi.encodeWithSelector(DreamAcademyLending.borrow.selector, address(usdc), 1000 ether)
             );
             assertTrue(success);
-            
+
             (success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.borrow.selector, address(usdc), 1000 ether)
             );
             assertTrue(success);
-            console.log("2:",usdc.balanceOf(user2));
 
             (success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.withdraw.selector, address(0x0), 1 ether)
             );
             assertFalse(success);
-            console.log("3:",usdc.balanceOf(user2));
-            
         }
         vm.stopPrank();
     }

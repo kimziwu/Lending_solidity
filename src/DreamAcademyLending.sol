@@ -1,28 +1,11 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
 import "forge-std/console.sol";
 import './IPriceOracle.sol';
+import './math.sol';
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
-
-/**
-ETH를 담보로 사용해서 USDC를 빌리고, 빌려줄 수 있는 서비스
-이자율 : 24h - 0.1% 
-LTV : 50%        	OOOOOOOOOOOOOOOOOOOOOO
-	특정 담보로 빌릴 수 있는 최대 금액
-	1ETH=0.5USDC
-liquidation threshold : 75%
-	청산 임계값
-	대출이 담보의 75%를 넘으면 청산됨
-담보가격 : oracle
-
--deposit (ETH, USDC 입금)
--borrow (담보만큼 대출)
--repay (대출상환)
--liquidate (청산하여 USDC 확보) - 청산방법은 적합한것으로 진행
-
--토큰은 주소로 간주해서 사용
-*/
 
 
 contract DreamAcademyLending {
@@ -30,162 +13,190 @@ contract DreamAcademyLending {
 	IPriceOracle _oracle;
 	ERC20 _stable;
 
+    uint constant RAY=10**27;
 
     mapping(address=>uint256) _deposits; //예금 USDC
+    //예금 관련
+    mapping(address=>uint256) _depositsUpdate;
+    mapping(address=>uint256) _depositsAccum; 
+    mapping(address=>uint256) _depositsInterest; 
 	uint _totalDeposits;
+    uint _totalDepositsUpdate;
+    uint _totalDepositsAccum;
+    address [] _arr;
+    
+
+    mapping(address=>uint256) _borrow; // 대출금 USDC
+    //대출금 관련
+    mapping(address=>uint256) _borrowUpdate;
+    mapping(address=>uint256) _borrowAccum;
+    mapping(address=>uint256) _borrowInterests; 
+	uint _totalBorrow;
+    uint _totalBorrowUpdate;
+    uint _totalBorrowAccum;
+
+
     mapping(address=>uint256) _mortgages; //담보금 BTC
 	uint _totalMortgages;
-    mapping(address=>uint256) _borrow; // USDC
-	uint _totalBorrow;
-	mapping(address=>uint) _time;
 
-	mapping(address=>uint) _interests; //이자
+	mapping(address=>uint) _interests; //이자 USDC
 	uint _totalInterests;
-
-	uint _totalUsd;
-	
-
-	/*
-	1block=12secs
-	이자율 0.1% 복리
-	mortgages*(1+0.001) ** 24h(1) 
-	
-	borrow(뺏김) -> deposits(받음)
-
-	(block.number*12-최근타임)*borrow?
-
-    time 변수설정
-	*/
-
-	uint _updateUsd;
-	uint _updateBorrow;
-	uint _usdcAccum; 
 
 
 	constructor(IPriceOracle oracle, address usdc) {
 		_stable=ERC20(usdc); 
 		_oracle=oracle;
-
 	}
 
 	// _stable은 컨트랙트, usdc 토큰 컨트롤 가능
 	function initializeLendingProtocol(address usdc) public payable {
-		/*
-		console.log(address(_usdc));
-		console.log(address(this));
-		console.log(address(msg.sender));
-		*/
-		
 		_stable.transferFrom(msg.sender, address(this), msg.value); 
-		_totalUsd+=msg.value;
-		
-		// 1block=12secs
+		_totalDeposits+=msg.value;
 	}
 
-	// address(0x0) : BTC, address(usdc) : USDC
-	// tokenAddress=토큰
+    
+	// 예금 - ETH,USDC
+    // address(0x0) : ETH, address(usdc) : USDC
 	function deposit(address tokenAddress, uint256 amount) external payable {
-		
-		if (tokenAddress!=address(0)){ //USDC
+		//USDC
+        if (tokenAddress!=address(0)){ 
             require(_stable.balanceOf(msg.sender)>=amount);
             require(amount>0); 
-            _stable.transferFrom(msg.sender, address(this), amount); 
+            
+            // 예금 이자 체크
+            uint256 m=_deposits[msg.sender]*(block.number*12-_depositsUpdate[msg.sender]);
             _deposits[msg.sender]+=amount;
-			_totalDeposits+=amount;
+            _depositsAccum[msg.sender]+=m; 
+            _depositsUpdate[msg.sender]=block.number*12;
+            _totalDeposits+=amount;
+
+            _stable.transferFrom(msg.sender, address(this), amount); 
+        
+            // 예금 배열
+            bool flag=false;
+            for (uint i=0; i<_arr.length; i++){
+                if(_arr[i]==msg.sender) flag=true;
+            }
+            if (flag==false) _arr.push(msg.sender);
         }
         else { // ETH 
 			require(msg.value>0); 
             require(msg.value==amount);
             _mortgages[msg.sender]+=amount;
-			_totalMortgages+=amount;
+			_totalMortgages+=amount; //sum
         }
 	}
 
 
-	// 대출
-	// tokenAddress 담보 토큰 = ETH, amount 담보 양 
-	// 담보를 기반으로 USDC 빌려줌
+	// 대출 - USDC (담보)
 	function borrow(address tokenAddress, uint256 amount) external payable{
 		require(_stable.balanceOf(address(this))>=amount);
+        
+        // borrow timeblock
+        uint time=block.number*12-_borrowUpdate[msg.sender];   
+        
+        // https://github.com/wolflo/solidity-interest-helper
+        _borrow[msg.sender]=Interest(_borrow[msg.sender],1000000011568290959081926677, time-(time/24 hours)*24 hours);
+        _borrowUpdate[msg.sender]=block.number*12;
 
 		// LTV - 50%
-        uint oracle=_oracle.getPrice(address(0x0))/_oracle.getPrice(tokenAddress);
+        uint oracle=_oracle.getPrice(address(0x0))/_oracle.getPrice(tokenAddress); //ETH
         uint test_amount=_mortgages[msg.sender]*oracle/2-_borrow[msg.sender];
         require(test_amount>=amount);
 
         _borrow[msg.sender]+=amount;
+        _borrowUpdate[msg.sender]=block.number*12;
+        _totalBorrowAccum+=amount;
 		_totalBorrow+=amount;
 		_stable.transfer(msg.sender, amount);
 	}
 
 
-	// USDC 상환 
+	// 대출상환 - USDC 
 	function repay(address tokenAddress, uint256 amount) external payable {
 		require(_stable.balanceOf(msg.sender)>=amount);
 		require(_borrow[msg.sender]>=amount);
 
-		// 이자 계산해야 함
-		_stable.transferFrom(msg.sender, address(this), amount);
 		_borrow[msg.sender]-=amount;
+        _stable.transferFrom(msg.sender, address(this), amount);
         _totalBorrow-=amount;
 	}
 
-	// 청산 
+
+	// 청산 ETH->USDC
 	function liquidate(address user, address tokenAddress, uint256 amount) external payable {
-
-		// 현재 담보가격 
-		uint256 mortgage = _mortgages[user]*_oracle.getPrice(address(0x0))/_oracle.getPrice(tokenAddress);
-		console.log(mortgage);
-
-		// liquidation threshold 
         require(_borrow[user]>=amount);
-        require(_borrow[user]>mortgage/2);
+		
+        uint256 oracle=_oracle.getPrice(address(0x0))/_oracle.getPrice(tokenAddress);
+        uint256 mortgage=_mortgages[user]*oracle;
+
+        // liquidation threshold 
+        require(_borrow[user]>mortgage*3/4);
 
         // 청산 금액
-        require(_borrow[user]<100 ether || amount==_borrow[user]/4);
+        require(_borrow[user]<100 ether||amount==_borrow[user]/4);
 		
         _borrow[user]-=amount;
         _totalBorrow-=amount;
+
         _mortgages[user]-=amount*_oracle.getPrice(tokenAddress)/_oracle.getPrice(address(0x0));
         _totalMortgages-=amount*_oracle.getPrice(tokenAddress)/_oracle.getPrice(address(0x0));
     }
 
 
 	// 출금 - USDC, ETH
-	// mortgage, deposit, interests
 	function withdraw(address tokenAddress, uint256 amount) external payable {
-		if (tokenAddress!=address(0)){ // USDC - _stable, interests, deposits
+        if (tokenAddress!=address(0)){ // USDC 
 			require(_stable.balanceOf(address(this))>=amount);
-            //uint pay=amount+_totalInterests*(_deposits[msg.sender]/_totalDeposits);
-            _deposits[msg.sender]-=amount;
-		    _stable.transferFrom(address(this), msg.sender, amount);
+            _depositsAccum[msg.sender]+=_deposits[msg.sender]*(block.number*12-_depositsUpdate[msg.sender]);
+
+            uint withdrawAmount=getAccruedSupplyAmount(address(_stable));
+            require(withdrawAmount>=amount);
+
             _totalDeposits-=amount;
-        
-            // time block 
+            _stable.transfer(msg.sender, amount);
 		}
-		else { //BTC
+		else { //ETH
+            //borrow timeblock
+            uint time=block.number*12-_borrowUpdate[msg.sender];
+            // https://github.com/wolflo/solidity-interest-helper
+            _borrow[msg.sender]=Interest(_borrow[msg.sender],1000000011568290959081926677, time-(time/24 hours)*24 hours);
+            _borrowUpdate[msg.sender]=block.number*12;
+
 			require(_mortgages[msg.sender]>=amount);
 			require(address(this).balance>=amount);
-
-			// 조건검증 repay 상환 50%
             
-			uint256 mortgage =_borrow[msg.sender]*_oracle.getPrice(address(this))/_oracle.getPrice(address(0x0));
-			require(mortgage<=(_mortgages[msg.sender]-amount)/2,"Liquidation threshold");
-    
+			uint256 mortgage =_borrow[msg.sender]*_oracle.getPrice(address(_stable))/_oracle.getPrice(address(0x0));
+			require(mortgage<=(_mortgages[msg.sender]-amount)*3/4,"Liquidation threshold");
     
 			_mortgages[msg.sender]-=amount;
 			msg.sender.call{value:amount}("");
 		}
-		
 	}
 
 
 	function getAccruedSupplyAmount(address usdc) public returns (uint256) {
-		return _deposits[msg.sender]+_totalInterests*(_deposits[msg.sender]/_totalDeposits);
-        // 개인 이자 계산 
+        update(); 
+		return _deposits[msg.sender]+_depositsInterest[msg.sender]; //예금+이자
 	}
+   
+
+    //이자 계산, 외부 라이브러리(rmul, rpow)
+    function Interest(uint principal, uint rate, uint age) internal returns (uint) {
+        return SafeMath.rmul(principal, SafeMath.rpow(rate, age));
+    }
 
 
+    function update() internal {
+        
+        _totalDepositsAccum+=_totalDeposits*(block.number*12-_totalDepositsUpdate);
+        _totalDepositsUpdate=block.number*12;
 
-
+        // borrow block, deposit arr ???
+        
+        
+    }
+    
 }
+
+

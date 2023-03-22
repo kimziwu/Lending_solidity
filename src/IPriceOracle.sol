@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity ^0.8.13;
 
-/************
-@title IPriceOracle interface
-@notice Interface for the Aave price oracle.*/
 interface IPriceOracle {
   function getPrice(address token) external view returns (uint256);
 
