@@ -8,8 +8,8 @@ import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
 
 contract DreamAcademyLending {
-	IPriceOracle priceOracle;
-	ERC20 usdc;
+    IPriceOracle priceOracle;
+    ERC20 usdc;
 
     uint256 constant public BLOCKS_PER_DAY = 7200;
     // (1+0.001)^(1/7200) * 10^27
@@ -33,25 +33,25 @@ contract DreamAcademyLending {
     }
     mapping(address => Borrow) borrows; 
 
-	uint256 totalBorrows;
+    uint256 totalBorrows;
     uint256 totalBorrowsUpdate;
     
     mapping(address=>uint256) mortgages; 
 
 
-	constructor(IPriceOracle oracle, address _usdc) {
-		usdc=ERC20(_usdc); 
-		priceOracle=oracle;
-	}
+    constructor(IPriceOracle oracle, address _usdc) {
+        usdc=ERC20(_usdc); 
+        priceOracle=oracle;
+    }
 
-	function initializeLendingProtocol(address _usdc) public payable {
-		usdc.transferFrom(msg.sender, address(this), msg.value); 
-	}
+    function initializeLendingProtocol(address _usdc) public payable {
+        usdc.transferFrom(msg.sender, address(this), msg.value); 
+    }
     
-	function deposit(address tokenAddress, uint256 amount) external payable {
+    function deposit(address tokenAddress, uint256 amount) external payable {
         require(tokenAddress == address(usdc) || tokenAddress == address(0), "Invalid token");
         require(amount > 0);
-		
+        
         if (tokenAddress == address(usdc)){ 
             require(usdc.balanceOf(msg.sender) >= amount);
             
@@ -69,12 +69,12 @@ contract DreamAcademyLending {
             require(msg.value == amount);
             mortgages[msg.sender] += amount;
         }
-	}
+    }
 
 
-	
-	function borrow(address tokenAddress, uint256 amount) external payable{
-		require(usdc.balanceOf(address(this)) >= amount);
+    
+    function borrow(address tokenAddress, uint256 amount) external payable{
+        require(usdc.balanceOf(address(this)) >= amount);
         
         Borrow storage borrow = borrows[msg.sender];
 
@@ -83,38 +83,38 @@ contract DreamAcademyLending {
         borrow.amount = Interest(borrow.amount, INTEREST_RATE, timeInterval); 
         borrow.timestamp = block.number * BLOCK;
 
-		// LTV - 50%
+        // LTV - 50%
         uint256 oracle = priceOracle.getPrice(address(0x0)) / priceOracle.getPrice(tokenAddress); 
         uint256 availableAmount = mortgages[msg.sender] * oracle * COLLATERAL_RATIO / 100 - borrow.amount;
         require(availableAmount >= amount);
 
         borrow.amount += amount;
-		totalBorrows += amount;
-		usdc.transfer(msg.sender, amount);
-	}
+        totalBorrows += amount;
+        usdc.transfer(msg.sender, amount);
+    }
 
 
-	function repay(address tokenAddress, uint256 amount) external payable {
-		require(usdc.balanceOf(msg.sender) >= amount);
-		require(borrows[msg.sender].amount >= amount);
+    function repay(address tokenAddress, uint256 amount) external payable {
+        require(usdc.balanceOf(msg.sender) >= amount);
+        require(borrows[msg.sender].amount >= amount);
 
-		borrows[msg.sender].amount -= amount;
+        borrows[msg.sender].amount -= amount;
         totalBorrows -= amount;
         
         usdc.transferFrom(msg.sender, address(this), amount);
-	}
+    }
 
 
-	function liquidate(address user, address tokenAddress, uint256 amount) external payable {
+    function liquidate(address user, address tokenAddress, uint256 amount) external payable {
         require(borrows[user].amount >= amount);
-		
+        
         uint256 oracle = priceOracle.getPrice(address(0x0)) / priceOracle.getPrice(tokenAddress);
         uint256 mortgage = mortgages[user] * oracle;
 
         // liquidation threshold & testcode 
         require(borrows[user].amount > mortgage * LIQUIDATION_THRESHOLD / 100);
         require(borrows[user].amount < 100 ether || amount == borrows[user].amount / 4);
-		
+        
         borrows[user].amount -= amount;
         totalBorrows -= amount;
         
@@ -123,34 +123,34 @@ contract DreamAcademyLending {
     }
 
 
-	function withdraw(address tokenAddress, uint256 amount) external payable {
+    function withdraw(address tokenAddress, uint256 amount) external payable {
         if (tokenAddress == address(usdc)){ 
-			require(usdc.balanceOf(address(this)) >= amount);
+            require(usdc.balanceOf(address(this)) >= amount);
      
             uint256 withdrawAmount = getAccruedSupplyAmount(address(usdc));
             require(withdrawAmount >= amount);
 
             usdc.transfer(msg.sender, amount);
-		}
-		else { 
+        }
+        else { 
             uint256 timeInterval = block.number * BLOCK - borrows[msg.sender].timestamp;
             borrows[msg.sender].amount = Interest(borrows[msg.sender].amount, INTEREST_RATE, timeInterval);
             borrows[msg.sender].timestamp = block.number * BLOCK;
 
             
-			uint256 mortgage = borrows[msg.sender].amount * priceOracle.getPrice(address(usdc)) / priceOracle.getPrice(address(0x0));
-			require(mortgage <= (mortgages[msg.sender] - amount) * LIQUIDATION_THRESHOLD / 100);
+            uint256 mortgage = borrows[msg.sender].amount * priceOracle.getPrice(address(usdc)) / priceOracle.getPrice(address(0x0));
+            require(mortgage <= (mortgages[msg.sender] - amount) * LIQUIDATION_THRESHOLD / 100);
     
-			mortgages[msg.sender] -= amount;
-			msg.sender.call{value:amount}("");
-		}
-	}
+            mortgages[msg.sender] -= amount;
+            msg.sender.call{value:amount}("");
+        }
+    }
 
 
-	function getAccruedSupplyAmount(address usdc) public returns (uint256) {
+    function getAccruedSupplyAmount(address usdc) public returns (uint256) {
         update(); 
-		return deposits[msg.sender].amount + deposits[msg.sender].interest; 
-	}
+        return deposits[msg.sender].amount + deposits[msg.sender].interest; 
+    }
    
 
     // https://github.com/wolflo/solidity-interest-helper 
